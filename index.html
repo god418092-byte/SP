@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Emergency System v2</title>
+<style>
+body{font-family:Arial;margin:0;background:#0b0b0b;color:white;}
+header{background:#111;padding:15px;text-align:center;font-size:22px;}
+.panel{display:none;padding:20px;}
+input,select,button{width:100%;padding:12px;margin-top:8px;border:none;border-radius:6px;font-size:16px;}
+button{background:#ff4444;color:white;}
+.call{background:#222;padding:10px;border-radius:6px;margin-top:10px;}
+.status{color:#00ff9c;margin-top:5px;}
+</style>
+</head>
+<body>
+<header>🚑 Emergency System v2</header>
+
+<div id="login" class="panel" style="display:block">
+<select id="user">
+<option>Pacient</option>
+<option>Special</option>
+<option>Brigada1</option>
+<option>Brigada2</option>
+<option>Brigada3</option>
+<option>Brigada4</option>
+<option>Brigada5</option>
+</select>
+<input id="pass" placeholder="Пароль (не нужен для Pacient)">
+<button onclick="login()">Войти</button>
+</div>
+
+<!-- PACIENT -->
+<div id="pacient" class="panel">
+<h2>Вызвать скорую</h2>
+<input id="pname" placeholder="Имя">
+<input id="paddr" placeholder="Адрес">
+<input id="pproblem" placeholder="Что случилось">
+<button onclick="createCall()">Вызвать</button>
+</div>
+
+<!-- SPECIAL -->
+<div id="special" class="panel">
+<h2>Диспетчер</h2>
+<div id="calls"></div>
+<h3>Журнал вызовов</h3>
+<div id="history"></div>
+<audio id="alertSound" src="https://www.soundjay.com/button/sounds/beep-07.mp3" preload="auto"></audio>
+</div>
+
+<!-- BRIGADA -->
+<div id="brig" class="panel">
+<h2 id="brigName"></h2>
+<div id="brigCalls"></div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-app.js";
+import { getFirestore, collection, addDoc, onSnapshot, updateDoc, doc, deleteDoc, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBoYwaeuS4nFw_I3lT0k0NvM2m6-hise-M",
+  authDomain: "to4nonemax-v1.firebaseapp.com",
+  projectId: "to4nonemax-v1",
+  storageBucket: "to4nonemax-v1.firebasestorage.app",
+  messagingSenderId: "476166075039",
+  appId: "1:476166075039:web:7ffda2848460df5df6e8aa",
+  measurementId: "G-3L4V15Y90K"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+let currentUser="";
+const passwords={Special:"1234",Brigada1:"1111",Brigada2:"1111",Brigada3:"1111",Brigada4:"1111",Brigada5:"1111"};
+
+// Login
+window.login=function(){
+let u=document.getElementById("user").value;
+let p=document.getElementById("pass").value;
+if(u!=="Pacient" && passwords[u]!==p){alert("Неверный пароль"); return;}
+currentUser=u;
+document.getElementById("login").style.display="none";
+if(u==="Pacient"){document.getElementById("pacient").style.display="block";}
+else if(u==="Special"){document.getElementById("special").style.display="block";loadCalls();}
+else{document.getElementById("brig").style.display="block";document.getElementById("brigName").innerText=u;loadBrigCalls();}
+}
+
+// Create call
+window.createCall=async function(){
+await addDoc(collection(db,"calls"),{
+name:document.getElementById("pname").value,
+addr:document.getElementById("paddr").value,
+problem:document.getElementById("pproblem").value,
+brig:null,
+status:"ожидание",
+created:serverTimestamp()
+});
+alert("Вызов отправлен");
+}
+
+// Dispatcher functions
+function loadCalls(){
+onSnapshot(query(collection(db,"calls"),orderBy("created","desc")),snap=>{
+let div=document.getElementById("calls");
+div.innerHTML="";
+let historyDiv=document.getElementById("history");
+historyDiv.innerHTML="";
+snap.forEach(d=>{
+let c=d.data();
+let time=c.created?.toDate()?.toLocaleString()||"";
+
+div.innerHTML+=`
+<div class="call">
+<b>${c.name}</b><br>
+Адрес: ${c.addr} <a href="https://www.google.com/maps/search/${encodeURIComponent(c.addr)}" target="_blank">🗺</a><br>
+Проблема: ${c.problem}<br>
+Статус: ${c.status}<br>
+<select id="b${d.id}">
+<option>Brigada1</option>
+<option>Brigada2</option>
+<option>Brigada3</option>
+<option>Brigada4</option>
+<option>Brigada5</option>
+</select>
+<button onclick="assign('${d.id}')">Назначить</button>
+<button onclick="changeStatus('${d.id}')">Изменить статус</button>
+<button onclick="deleteCall('${d.id}')">Удалить</button>
+</div>`;
+historyDiv.innerHTML+=`<div class="call"><b>${c.name}</b> - ${time} - ${c.status} - Бригада: ${c.brig||"-"}</div>`;
+});
+
+// Play alert
+if(snap.size>0) document.getElementById("alertSound").play();
+});
+}
+
+// Assign brigade
+window.assign=async function(id){
+let brig=document.getElementById("b"+id).value;
+await updateDoc(doc(db,"calls",id),{brig:brig,status:"назначено"});
+}
+
+// Change status
+window.changeStatus=async function(id){
+let s=prompt("Введите новый статус:");
+if(s){await updateDoc(doc(db,"calls",id),{status:s});}
+}
+
+// Delete call
+window.deleteCall=async function(id){
+if(confirm("Вы уверены, что хотите удалить этот вызов?")){
+await deleteDoc(doc(db,"calls",id));
+}
+}
+
+// Brigade functions
+function loadBrigCalls(){
+onSnapshot(collection(db,"calls"),snap=>{
+let div=document.getElementById("brigCalls");
+div.innerHTML="";
+snap.forEach(d=>{
+let c=d.data();
+if(c.brig===currentUser){
+div.innerHTML+=`
+<div class="call">
+Пациент: ${c.name}<br>
+Адрес: ${c.addr} <a href="https://www.google.com/maps/search/${encodeURIComponent(c.addr)}" target="_blank">🧭</a><br>
+Проблема: ${c.problem}<br>
+Статус: ${c.status}
+<button onclick="updateBrigStatus('${d.id}')">Изменить статус</button>
+</div>`;
+}
+});
+});
+}
+
+// Update brigade status
+window.updateBrigStatus=async function(id){
+let s=prompt("Введите новый статус:");
+if(s){await updateDoc(doc(db,"calls",id),{status:s});}
+}
+
+</script>
+</body>
+</html>
